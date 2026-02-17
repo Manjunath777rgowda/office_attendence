@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Office Attendance</title>
+    <style>
+        body { font-family: -apple-system, sans-serif; margin: 40px; background: #f5f5f7; color: #1d1d1f; }
+        .card-container { display: flex; gap: 20px; margin-bottom: 30px; }
+        .card { background: white; padding: 20px; border-radius: 12px; flex: 1; box-shadow: 0 4px 12px rgba(0,0,0,0.08); text-align: center; }
+        .big-num { font-size: 3em; font-weight: 700; color: #007aff; }
+        table { width: 100%; border-collapse: collapse; background: white; border-radius: 12px; overflow: hidden; margin-bottom: 30px; }
+        th, td { padding: 15px; text-align: left; border-bottom: 1px solid #eee; }
+        th { background: #007aff; color: white; }
+        .tag { font-weight: 600; color: #34c759; }
+    </style>
+</head>
+<body>
+    <h1>Attendance for {{ office_ssid }}</h1>
+    <div class="card-container">
+        <div class="card"><h3>Days Done</h3><div class="big-num">{{ completed }}</div></div>
+        <div class="card"><h3>Days Left</h3><div class="big-num">{{ remaining }}</div><p>Goal: {{ goal }}</p></div>
+    </div>
+    <h2>🏢 Office Logs</h2>
+    <table>
+        <tr><th>Date</th><th>SSID</th><th>Duration</th></tr>
+        {% for row in office_history %}
+        <tr><td>{{ row.date }}</td><td class="tag">{{ row.ssid }}</td><td>{{ (row.duration_mins/60)|round(2) }} hrs</td></tr>
+        {% endfor %}
+    </table>
+    <h2>🌐 Other Networks</h2>
+    <table>
+        <tr><th>Date</th><th>SSID</th><th>Duration</th></tr>
+        {% for row in other_history %}
+        <tr><td>{{ row.date }}</td><td>{{ row.ssid }}</td><td>{{ (row.duration_mins/60)|round(2) }} hrs</td></tr>
+        {% endfor %}
+    </table>
+</body>
+</html>

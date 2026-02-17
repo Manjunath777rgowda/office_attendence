@@ -1,0 +1,5 @@
+{
+    "target_ssid": "IBM",
+    "monthly_goal": 12,
+    "interface": "en0"
+}
