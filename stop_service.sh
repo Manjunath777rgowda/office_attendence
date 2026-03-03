@@ -6,12 +6,12 @@ PLIST_PATH="$HOME/Library/LaunchAgents/$PLIST_NAME.plist"
 echo "--- 🛑 Stopping Office Attendance Service ---"
 
 # 1. Unload the service from launchctl
-if [ -f "$PLIST_PATH" ]; then
-    launchctl unload "$PLIST_PATH"
-    echo "Service unloaded from LaunchAgents."
-else
-    echo "Service file not found at $PLIST_PATH"
-fi
+# if [ -f "$PLIST_PATH" ]; then
+#     launchctl unload "$PLIST_PATH"
+#     echo "Service unloaded from LaunchAgents."
+# else
+#     echo "Service file not found at $PLIST_PATH"
+# fi
 
 # 2. Force kill any remaining python processes just in case
 # This looks for the specific app.py process

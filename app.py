@@ -1,3 +1,4 @@
+import logging
 import subprocess
 import sqlite3
 import time
@@ -14,7 +15,11 @@ DB_NAME = "wifi_history.db"
 CONFIG_FILE = "config.json"
 last_ssid = None  # Global to track state changes
 
-
+logging.basicConfig(
+    filename="app.log",
+    level=logging.DEBUG,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+)
 # --- NOTIFICATIONS & SIGNALS ---
 def send_notification(title, message):
     try:
@@ -24,6 +29,7 @@ def send_notification(title, message):
             display dialog "{message}" with title "{title}" buttons {{"OK"}} default button "OK"
         end tell
         """
+        print("Sending Notification:", title, message)
         subprocess.run(["osascript", "-e", script])
     except Exception as e:
         print("Notification Error:", e)
@@ -69,12 +75,14 @@ def get_current_ssid(interface):
 # --- TRACKER LOOP ---
 def tracker_loop():
     global last_ssid
-    print("--- Tracker Started ---")
+    logging.info("--- Tracker Started ---")
     while True:
+        logging.info("---Last Ran at ---> %s", datetime.now())
         config = load_config()
         now = datetime.now()
         current_ssid = get_current_ssid(config["interface"])
 
+        logging.info(f"Current SSID: {current_ssid}, Last SSID: {last_ssid}")
         if current_ssid is None:
             send_notification("Wi-fi Disconnected", "Wi-fi Disconnected")
             return
@@ -109,7 +117,9 @@ def tracker_loop():
                 conn.commit()
 
         last_ssid = current_ssid
+        logging.info("---Sleeping for 60 seconds---")
         time.sleep(60)
+        logging.info("---Woke up at ---> %s", datetime.now())
 
 
 # --- WEB ROUTES ---
@@ -120,7 +130,8 @@ def index():
     with sqlite3.connect(DB_NAME) as conn:
         conn.row_factory = sqlite3.Row
         office_history = conn.execute(
-            "SELECT * FROM daily_logs WHERE ssid = ? ORDER BY date DESC", (office_ssid,)
+            "SELECT * FROM daily_logs WHERE ssid = ? AND strftime('%Y-%m', date) = strftime('%Y-%m', 'now', 'localtime') ORDER BY date DESC",
+            (office_ssid,),
         ).fetchall()
         other_history = conn.execute(
             "SELECT * FROM daily_logs WHERE ssid != ? ORDER BY date DESC",
