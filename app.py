@@ -9,6 +9,8 @@ import signal
 import sys
 from datetime import datetime
 from flask import Flask, render_template
+from apscheduler.schedulers.background import BackgroundScheduler
+
 
 app = Flask(__name__)
 DB_NAME = "wifi_history.db"
@@ -76,50 +78,49 @@ def get_current_ssid(interface):
 def tracker_loop():
     global last_ssid
     logging.info("--- Tracker Started ---")
-    while True:
-        logging.info("---Last Ran at ---> %s", datetime.now())
-        config = load_config()
-        now = datetime.now()
-        current_ssid = get_current_ssid(config["interface"])
+    logging.info("---Last Ran at ---> %s", datetime.now())
+    config = load_config()
+    now = datetime.now()
+    current_ssid = get_current_ssid(config["interface"])
 
-        logging.info(f"Current SSID: {current_ssid}, Last SSID: {last_ssid}")
-        if current_ssid is None:
-            send_notification("Wi-fi Disconnected", "Wi-fi Disconnected")
-            return
-        # Connection/Disconnection Logic
-        if current_ssid and last_ssid is None:
-            send_notification("Wi-Fi Connected", f"🌐 Joined {current_ssid}")
-        elif last_ssid and current_ssid is None:
-            send_notification("Wi-Fi Offline", "⚠️ Wi-Fi is turned off or lost.")
-        elif current_ssid and last_ssid and current_ssid != last_ssid:
-            send_notification("Network Switched", f"🔄 Moved to {current_ssid}")
+    logging.info(f"Current SSID: {current_ssid}, Last SSID: {last_ssid}")
+    if current_ssid is None:
+        send_notification("Wi-fi Disconnected", "Wi-fi Disconnected")
+        return
+    # Connection/Disconnection Logic
+    if current_ssid and last_ssid is None:
+        send_notification("Wi-Fi Connected", f"🌐 Joined {current_ssid}")
+    elif last_ssid and current_ssid is None:
+        send_notification("Wi-Fi Offline", "⚠️ Wi-Fi is turned off or lost.")
+    elif current_ssid and last_ssid and current_ssid != last_ssid:
+        send_notification("Network Switched", f"🔄 Moved to {current_ssid}")
 
-        # Logging Logic
-        if current_ssid:
-            today = now.strftime("%Y-%m-%d")
-            with sqlite3.connect(DB_NAME) as conn:
-                cursor = conn.cursor()
+    # Logging Logic
+    if current_ssid:
+        today = now.strftime("%Y-%m-%d")
+        with sqlite3.connect(DB_NAME) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT duration_mins FROM daily_logs WHERE date=? AND ssid=?",
+                (today, current_ssid),
+            )
+            row = cursor.fetchone()
+            if not row:
                 cursor.execute(
-                    "SELECT duration_mins FROM daily_logs WHERE date=? AND ssid=?",
-                    (today, current_ssid),
+                    "INSERT INTO daily_logs VALUES (?, ?, ?)",
+                    (today, current_ssid, 1),
                 )
-                row = cursor.fetchone()
-                if not row:
-                    cursor.execute(
-                        "INSERT INTO daily_logs VALUES (?, ?, ?)",
-                        (today, current_ssid, 1),
-                    )
-                else:
-                    cursor.execute(
-                        "UPDATE daily_logs SET duration_mins=? WHERE date=? AND ssid=?",
-                        (row[0] + 1, today, current_ssid),
-                    )
-                conn.commit()
+            else:
+                cursor.execute(
+                    "UPDATE daily_logs SET duration_mins=? WHERE date=? AND ssid=?",
+                    (row[0] + 1, today, current_ssid),
+                )
+            conn.commit()
 
-        last_ssid = current_ssid
-        logging.info("---Sleeping for 60 seconds---")
-        time.sleep(60)
-        logging.info("---Woke up at ---> %s", datetime.now())
+    last_ssid = current_ssid
+        # logging.info("---Sleeping for 60 seconds---")
+        # # time.sleep(60)
+        # logging.info("---Woke up at ---> %s", datetime.now())
 
 
 # --- WEB ROUTES ---
@@ -149,9 +150,12 @@ def index():
         goal=config["monthly_goal"],
     )
 
+scheduler = BackgroundScheduler()
+scheduler.add_job(tracker_loop, "interval", seconds=60)
+scheduler.start()
 
 if __name__ == "__main__":
     init_db()
     send_notification("Office Tracker", "🚀 Background Service Started.")
-    threading.Thread(target=tracker_loop, daemon=True).start()
+    # threading.Thread(target=tracker_loop, daemon=True).start()
     app.run(port=5000, debug=False, use_reloader=False)

@@ -14,7 +14,7 @@ if [ ! -d "venv" ]; then
     python3 -m venv venv
 fi
 source venv/bin/activate
-pip install Flask==3.0.0
+pip install -r requirements.txt
 nohup python3 $APP_DIR/app.py > $APP_DIR/output.log 2>&1 &
 
 # 3. Create the LaunchAgent Plist
