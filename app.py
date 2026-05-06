@@ -7,8 +7,8 @@ import json
 import os
 import signal
 import sys
-from datetime import datetime
-from flask import Flask, render_template
+from datetime import datetime, timedelta
+from flask import Flask, render_template, jsonify
 from apscheduler.schedulers.background import BackgroundScheduler
 
 
@@ -118,9 +118,75 @@ def tracker_loop():
             conn.commit()
 
     last_ssid = current_ssid
-        # logging.info("---Sleeping for 60 seconds---")
-        # # time.sleep(60)
-        # logging.info("---Woke up at ---> %s", datetime.now())
+    # logging.info("---Sleeping for 60 seconds---")
+    # # time.sleep(60)
+    # logging.info("---Woke up at ---> %s", datetime.now())
+
+
+# --- DATA AGGREGATION FUNCTIONS ---
+def get_monthly_report(office_ssid, monthly_goal):
+    """Get monthly attendance report for the past 12 months with goal tracking"""
+    with sqlite3.connect(DB_NAME) as conn:
+        conn.row_factory = sqlite3.Row
+        monthly_data = conn.execute(
+            """
+            SELECT
+                strftime('%Y-%m', date) as month,
+                COUNT(DISTINCT date) as days_present,
+                SUM(duration_mins) as total_minutes
+            FROM daily_logs
+            WHERE ssid = ?
+            GROUP BY strftime('%Y-%m', date)
+            ORDER BY month DESC
+            LIMIT 12
+            """,
+            (office_ssid,),
+        ).fetchall()
+
+    # Add goal tracking to each month
+    monthly_with_goals = []
+    for row in monthly_data:
+        row_dict = dict(row)
+        row_dict["goal"] = monthly_goal
+        row_dict["days_remaining"] = max(0, monthly_goal - row_dict["days_present"])
+        monthly_with_goals.append(row_dict)
+
+    return monthly_with_goals
+
+
+def get_quarterly_report(office_ssid, quarterly_goal):
+    """Get quarterly attendance report with goal tracking"""
+    with sqlite3.connect(DB_NAME) as conn:
+        conn.row_factory = sqlite3.Row
+        quarterly_data = conn.execute(
+            """
+            SELECT
+                CASE
+                    WHEN CAST(strftime('%m', date) AS INTEGER) BETWEEN 1 AND 3 THEN strftime('%Y', date) || '-Q1'
+                    WHEN CAST(strftime('%m', date) AS INTEGER) BETWEEN 4 AND 6 THEN strftime('%Y', date) || '-Q2'
+                    WHEN CAST(strftime('%m', date) AS INTEGER) BETWEEN 7 AND 9 THEN strftime('%Y', date) || '-Q3'
+                    ELSE strftime('%Y', date) || '-Q4'
+                END as quarter,
+                COUNT(DISTINCT date) as days_present,
+                SUM(duration_mins) as total_minutes
+            FROM daily_logs
+            WHERE ssid = ?
+            GROUP BY quarter
+            ORDER BY quarter DESC
+            LIMIT 8
+            """,
+            (office_ssid,),
+        ).fetchall()
+
+    # Add goal tracking to each quarter
+    quarterly_with_goals = []
+    for row in quarterly_data:
+        row_dict = dict(row)
+        row_dict["goal"] = quarterly_goal
+        row_dict["days_remaining"] = max(0, quarterly_goal - row_dict["days_present"])
+        quarterly_with_goals.append(row_dict)
+
+    return quarterly_with_goals
 
 
 # --- WEB ROUTES ---
@@ -140,6 +206,22 @@ def index():
         ).fetchall()
         completed = len(office_history)
         remaining = max(0, config["monthly_goal"] - completed)
+
+    # Get monthly and quarterly reports
+    monthly_report = get_monthly_report(office_ssid, config["monthly_goal"])
+    quarterly_goal = config["monthly_goal"] * 3  # Quarterly goal is 3x monthly goal
+    quarterly_report = get_quarterly_report(office_ssid, quarterly_goal)
+
+    # Calculate current quarter's days left
+    now = datetime.now()
+    current_quarter = f"{now.year}-Q{((now.month - 1) // 3) + 1}"
+    quarterly_completed = 0
+    for row in quarterly_report:
+        if row["quarter"] == current_quarter:
+            quarterly_completed = row["days_present"]
+            break
+    quarterly_remaining = max(0, quarterly_goal - quarterly_completed)
+
     return render_template(
         "index.html",
         office_history=office_history,
@@ -148,7 +230,32 @@ def index():
         remaining=remaining,
         office_ssid=office_ssid,
         goal=config["monthly_goal"],
+        monthly_report=monthly_report,
+        quarterly_report=quarterly_report,
+        quarterly_goal=quarterly_goal,
+        quarterly_completed=quarterly_completed,
+        quarterly_remaining=quarterly_remaining,
     )
+
+
+@app.route("/api/monthly-report")
+def api_monthly_report():
+    """API endpoint for monthly report data"""
+    config = load_config()
+    office_ssid = config["target_ssid"]
+    monthly_data = get_monthly_report(office_ssid, config["monthly_goal"])
+    return jsonify(monthly_data)
+
+
+@app.route("/api/quarterly-report")
+def api_quarterly_report():
+    """API endpoint for quarterly report data"""
+    config = load_config()
+    office_ssid = config["target_ssid"]
+    quarterly_goal = config["monthly_goal"] * 3
+    quarterly_data = get_quarterly_report(office_ssid, quarterly_goal)
+    return jsonify(quarterly_data)
+
 
 scheduler = BackgroundScheduler()
 scheduler.add_job(tracker_loop, "interval", seconds=60)
